@@ -1,0 +1,126 @@
+{
+  "name": "Informe cierre diario — POS → Telegram",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        160,
+        0
+      ],
+      "id": "12d8e248-7785-4e03-8180-78e1e9903913",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "const LOCAL = \"Restaurante Centro\";\nconst rnd = (min, max) => Math.random() * (max - min) + min;\nconst tickets = [];\n\nfor (let i = 0; i < 140; i++) {\n  const delivery = Math.random() < 0.28;\n  const comensales = delivery ? 1 : Math.round(rnd(1, 5));\n  const importe = delivery ? rnd(18, 45) : rnd(12, 34) * comensales;\n  tickets.push({\n    id: 1000 + i,\n    canal: delivery ? 'delivery' : 'local',\n    comensales,\n    importe: Math.round(importe * 100) / 100,\n    descuento: Math.random() < 0.12 ? Math.round(importe * rnd(0.05, 0.20) * 100) / 100 : 0,\n    invitacion: Math.random() < 0.04,\n    anulado: Math.random() < 0.03,\n  });\n}\n\nconst ventaDia = tickets\n  .filter(t => !t.anulado && !t.invitacion)\n  .reduce((s, t) => s + t.importe - t.descuento, 0);\n\nreturn [{\n  json: {\n    local: LOCAL,\n    fecha: new Date(Date.now() - 86400000).toLocaleDateString('es-ES'),\n    acumuladoMes: 84210.55,\n    ventaSemanaPasada: ventaDia * (0.88 + Math.random() * 0.2),\n    tickets,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ],
+      "id": "e9a01733-885d-4393-99a8-957cada8f59f",
+      "name": "1 Datos Revo"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\n\nconst eur = n => n.toLocaleString('es-ES', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' €';\nconst pct = n => n.toLocaleString('es-ES', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + '%';\n\nconst anulados = d.tickets.filter(t => t.anulado);\nconst invitaciones = d.tickets.filter(t => !t.anulado && t.invitacion);\nconst validos = d.tickets.filter(t => !t.anulado && !t.invitacion);\n\nconst neto = t => t.importe - t.descuento;\nconst suma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);\n\nconst ventaNeta = suma(validos, neto);\nconst descuentos = suma(validos, t => t.descuento);\nconst comensales = suma(validos, t => t.comensales);\n\nconst local = validos.filter(t => t.canal === 'local');\nconst delivery = validos.filter(t => t.canal === 'delivery');\nconst ventaLocal = suma(local, neto);\nconst ventaDelivery = suma(delivery, neto);\n\nconst variacion = ((ventaNeta - d.ventaSemanaPasada) / d.ventaSemanaPasada) * 100;\n\nreturn [{\n  json: {\n    local: d.local,\n    fecha: d.fecha,\n    ventaNeta: eur(ventaNeta),\n    variacion: (variacion >= 0 ? '+' : '') + pct(variacion),\n    subiendo: variacion >= 0,\n    acumuladoMes: eur(d.acumuladoMes + ventaNeta),\n    ventaLocal: eur(ventaLocal),\n    pesoLocal: pct(ventaLocal / ventaNeta * 100),\n    ventaDelivery: eur(ventaDelivery),\n    pesoDelivery: pct(ventaDelivery / ventaNeta * 100),\n    ticketMedio: eur(ventaNeta / validos.length),\n    comensales,\n    gastoComensal: eur(ventaNeta / comensales),\n    descuentos: eur(descuentos),\n    pesoDescuentos: pct(descuentos / (ventaNeta + descuentos) * 100),\n    numInvitaciones: invitaciones.length,\n    importeInvitaciones: eur(suma(invitaciones, t => t.importe)),\n    numAnulados: anulados.length,\n    importeAnulados: eur(suma(anulados, t => t.importe)),\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "id": "ca1e68e9-0d0d-4b46-a977-2e41c33c13d2",
+      "name": "2 Calcular KPIs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const k = $input.first().json;\n\nconst mensaje = `📊 *CIERRE ${k.fecha}* · ${k.local}\n\n*VENTA NETA: ${k.ventaNeta}*\n${k.subiendo ? '🔼' : '🔻'} ${k.variacion} vs. mismo día semana pasada\nAcumulado mes: ${k.acumuladoMes}\n\n*CANALES*\n🍽️ Local: ${k.ventaLocal} (${k.pesoLocal})\n🛵 Delivery: ${k.ventaDelivery} (${k.pesoDelivery})\n\n*TICKET*\nMedio: ${k.ticketMedio} · Comensales: ${k.comensales}\nGasto/comensal: ${k.gastoComensal}\n\n*CONTROL*\nDescuentos: ${k.descuentos} (${k.pesoDescuentos})\nInvitaciones: ${k.numInvitaciones} · ${k.importeInvitaciones}\nAnulaciones: ${k.numAnulados} · ${k.importeAnulados}`;\n\nreturn [{ json: { mensaje } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        0
+      ],
+      "id": "c04361a2-906f-4d48-b035-7186a3f4763c",
+      "name": "3 Redactar informe"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.mensaje }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        784,
+        0
+      ],
+      "id": "159f20d1-1f09-4c13-beaf-7367d2d31d53",
+      "name": "Send a text message",
+      "disabled": true
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "1 Datos Revo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1 Datos Revo": {
+      "main": [
+        [
+          {
+            "node": "2 Calcular KPIs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2 Calcular KPIs": {
+      "main": [
+        [
+          {
+            "node": "3 Redactar informe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3 Redactar informe": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}
